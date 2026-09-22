@@ -1,0 +1,125 @@
+quét bài viết facebook
+
+// Bước 1: Dừng các script cũ đang chạy ngầm để tránh đụng độ
+if (window.locketScraperInterval) {
+    clearInterval(window.locketScraperInterval);
+    console.log("Đã dừng script cũ.");
+}
+
+// Bước 2: Chạy script mới quét toàn diện và GIẢI MÃ TRỰC TIẾP
+(function() {
+    console.log("🚀 BẮT ĐẦU AUTO QUÉT GROUP & TỰ ĐỘNG GIẢI MÃ LINK FACEBOOK...");
+    let locketLinks = new Set(); // Set tự động loại bỏ các link trùng nhau
+    
+    let expandCount = 0;
+    let closeAttempts = 0;
+    let totalPostsScanned = 0;
+    
+    const MAX_EXPANDS_PER_POST = 3; 
+    const MAX_POSTS = 20;           
+
+    // NÂNG CẤP: Hàm chuyên dụng để trích xuất link Locket sạch từ chuỗi siêu dài của Facebook
+    function cleanAndAddLink(rawText) {
+        try {
+            // Giải mã URL của FB (%3A%2F%2F -> ://)
+            let decodedText = decodeURIComponent(rawText);
+            
+            // Tìm chính xác đoạn locket.cam/... hoặc locket.camera/...
+            let regex = /(locket\.cam\/[a-zA-Z0-9_.-]+|locket\.camera\/(?:invites|links)\/[a-zA-Z0-9_.-]+)/g;
+            let matches = decodedText.match(regex);
+            
+            if (matches) {
+                matches.forEach(match => {
+                    locketLinks.add("https://" + match);
+                });
+            }
+        } catch(e) {}
+    }
+
+    function scanAllLinks() {
+        // Quét thẻ <a>
+        document.querySelectorAll('a').forEach(a => {
+            if (a.href && (a.href.includes('locket.cam') || a.href.includes('locket.camera') || a.href.includes('l.facebook.com'))) {
+                cleanAndAddLink(a.href);
+            }
+        });
+        // Quét chữ thường
+        cleanAndAddLink(document.body.innerText);
+    }
+
+    window.locketScraperInterval = setInterval(() => {
+        scanAllLinks(); // Liên tục quét và giải mã
+
+        let closeBtn = document.querySelector('div[aria-label="Đóng"], div[aria-label="Close"], div[aria-label="Đóng bình luận"]');
+        let modal = document.querySelector('div[role="dialog"]');
+
+        if (closeBtn && modal) {
+            if (expandCount < MAX_EXPANDS_PER_POST) {
+                let clickableElements = document.querySelectorAll('div[role="dialog"] div[role="button"], div[role="dialog"] span');
+                clickableElements.forEach(el => {
+                    let text = el.innerText ? el.innerText.trim().toLowerCase() : '';
+                    if (text === 'xem thêm bình luận' || text === 'xem thêm phản hồi' || text === 'tất cả bình luận' || text === 'xem thêm') {
+                        try { el.click(); } catch(e) {}
+                    }
+                });
+
+                expandCount++;
+                console.log(`⏳ Đang cào bình luận (${expandCount}/${MAX_EXPANDS_PER_POST}) - Gom được: ${locketLinks.size} NICK DUY NHẤT...`);
+            } else {
+                console.log(`✅ Xong bài ${totalPostsScanned + 1}. Bấm Đóng...`);
+                try { closeBtn.click(); } catch(e) {}
+                closeAttempts++;
+                
+                if (closeAttempts > 3) {
+                    modal.remove();
+                    document.body.style.overflow = "auto"; 
+                }
+            }
+        } else {
+            if (closeAttempts > 0) {
+                totalPostsScanned++;
+                expandCount = 0;
+                closeAttempts = 0;
+            }
+
+            if (totalPostsScanned >= MAX_POSTS) {
+                clearInterval(window.locketScraperInterval);
+                console.log("🎉 HOÀN TẤT QUÉT GROUP!");
+                downloadLinks();
+                return;
+            }
+
+            let commentButtons = Array.from(document.querySelectorAll('div[role="button"]')).filter(el => {
+                let text = el.innerText ? el.innerText.trim().toLowerCase() : '';
+                return (text === 'bình luận' || text === 'comment') && el.dataset.scraped !== "true";
+            });
+
+            if (commentButtons.length > 0) {
+                let btn = commentButtons[0];
+                btn.dataset.scraped = "true"; 
+                console.log(`Mở bài viết thứ ${totalPostsScanned + 1}/${MAX_POSTS}...`);
+                try { btn.click(); } catch(e) {}
+            } else {
+                console.log(`Trượt bảng tin để tìm bài mới... (Đang có ${locketLinks.size} nick)`);
+                window.scrollBy(0, 2000);
+            }
+        }
+    }, 2000); 
+
+    function downloadLinks() {
+        let result = Array.from(locketLinks).join('\n');
+        if (locketLinks.size === 0) {
+            alert("❌ Không tìm thấy link Locket nào.");
+            return;
+        }
+        let blob = new Blob([result], { type: "text/plain" });
+        let a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "comments.txt";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        console.log(`📂 Đã tải file 'comments.txt' thành công! Cào được ${locketLinks.size} nick duy nhất.`);
+        alert(`🎉 Tải thành công file chứa ${locketLinks.size} nick Locket không trùng lặp!`);
+    }
+})();
